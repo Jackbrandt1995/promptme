@@ -17,6 +17,11 @@ async function requireUser() {
   if (!session?.user?.id) {
     throw new Error("Unauthorized");
   }
+  // Verify the user still exists in DB — session can be stale after a db:reset
+  const dbUser = await prisma.user.findUnique({ where: { id: session.user.id } });
+  if (!dbUser) {
+    throw new Error("Your session has expired. Please sign out and sign back in.");
+  }
   return session.user;
 }
 

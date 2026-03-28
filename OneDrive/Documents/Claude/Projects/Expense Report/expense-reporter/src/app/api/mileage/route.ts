@@ -53,10 +53,16 @@ export async function POST(req: NextRequest) {
   const data = await googleRes.json();
 
   if (data.status !== "OK") {
-    return NextResponse.json(
-      { error: `Google Maps error: ${data.status}` },
-      { status: 400 }
-    );
+    const statusMessages: Record<string, string> = {
+      REQUEST_DENIED:
+        "Google Maps request was denied. Make sure the Distance Matrix API is enabled for your key at console.cloud.google.com → APIs & Services → Enable APIs.",
+      OVER_DAILY_LIMIT:
+        "Google Maps daily quota exceeded. Check your billing and quota settings at console.cloud.google.com.",
+      OVER_QUERY_LIMIT: "Google Maps query limit exceeded. Please try again later.",
+      INVALID_REQUEST: "Invalid request sent to Google Maps. Check the addresses and try again.",
+    };
+    const message = statusMessages[data.status] ?? `Google Maps error: ${data.status}`;
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   const element = data.rows?.[0]?.elements?.[0];
