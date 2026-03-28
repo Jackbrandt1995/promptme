@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("employee") // "employee" | "admin"
+  department   String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  expenses  Expense[]
+  reports   ExpenseReport[]
+}
+
+model Expense {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+
+  merchant        String   @default("")
+  description     String   @default("")
+  amount          Float    @default(0)
+  currency        String   @default("USD")
+  taxAmount       Float    @default(0)
+  transactionDate String   @default("") // ISO date string
+  category        String   @default("") // food, transport, lodging, office, travel, entertainment, other
+  paymentMethod   String   @default("") // credit_card, debit_card, cash, corporate_card, personal
+  reimbursable    Boolean  @default(true)
+  billable        Boolean  @default(false)
+  projectClient   String   @default("")
+
+  // Receipt & extraction
+  receiptPath     String   @default("")
+  receiptFilename String   @default("")
+  extractionConfidence Float @default(0) // 0-1 scale
+  extractionData  String   @default("{}") // JSON blob of raw extraction
+  flaggedFields   String   @default("[]") // JSON array of field names needing review
+
+  // Status: draft, reviewed, submitted, approved, rejected
+  status          String   @default("draft")
+
+  // Report link (nullable)
+  reportId        String?
+  report          ExpenseReport? @relation(fields: [reportId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ExpenseReport {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+
+  title           String   @default("")
+  department      String   @default("")
+  dateRangeStart  String   @default("")
+  dateRangeEnd    String   @default("")
+  businessPurpose String   @default("")
+  projectClient   String   @default("")
+  notes           String   @default("")
+  totalAmount     Float    @default(0)
+
+  // Status: draft, submitted, approved, rejected
+  status          String   @default("draft")
+  submittedAt     String?  // ISO timestamp
+  adminEmail      String   @default("")
+
+  expenses        Expense[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
