@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
-import { uploadAndExtractReceipt } from "@/lib/actions";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,7 @@ interface ReceiptUploaderProps {
 }
 
 export function ReceiptUploader({ onUploadComplete, compact }: ReceiptUploaderProps) {
+  const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
@@ -38,10 +39,12 @@ export function ReceiptUploader({ onUploadComplete, compact }: ReceiptUploaderPr
           const formData = new FormData();
           formData.append("file", file);
 
-          const result = await uploadAndExtractReceipt(formData);
+          const res = await fetch("/api/upload", { method: "POST", body: formData });
+          const result = await res.json();
 
           if (result.success) {
             setProgress("Extraction complete!");
+            router.refresh();
             onUploadComplete?.(result);
           } else {
             setError(result.error || "Upload failed");
@@ -54,7 +57,7 @@ export function ReceiptUploader({ onUploadComplete, compact }: ReceiptUploaderPr
       setUploading(false);
       setTimeout(() => setProgress(""), 2000);
     },
-    [onUploadComplete]
+    [onUploadComplete, router]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

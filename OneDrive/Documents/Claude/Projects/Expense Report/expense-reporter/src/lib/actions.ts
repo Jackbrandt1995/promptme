@@ -3,11 +3,8 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth";
 import { prisma } from "./db";
-import { extractFromReceipt } from "./extraction";
 import { sendReportEmail } from "./email";
 import { revalidatePath } from "next/cache";
-import { v4 as uuid } from "uuid";
-import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 
 // ─── Auth Helper ─────────────────────────────────────────────
@@ -23,77 +20,6 @@ async function requireUser() {
     throw new Error("Your session has expired. Please sign out and sign back in.");
   }
   return session.user;
-}
-
-// ─── Receipt Upload & Extraction ─────────────────────────────
-
-export async function uploadAndExtractReceipt(formData: FormData) {
-  const user = await requireUser();
-  const file = formData.get("file") as File;
-
-  if (!file) {
-    return { success: false, error: "No file provided" };
-  }
-
-  const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    return { success: false, error: "Unsupported file type. Please upload a JPG, PNG, WebP, or PDF." };
-  }
-
-  const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
-  if (file.size > MAX_SIZE_BYTES) {
-    return { success: false, error: "File is too large. Maximum size is 10 MB." };
-  }
-
-  try {
-    // Save file to disk
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadDir, { recursive: true });
-
-    const ext = path.extname(file.name) || ".jpg";
-    const filename = `${uuid()}${ext}`;
-    const filepath = path.join(uploadDir, filename);
-    await writeFile(filepath, buffer);
-
-    // Extract data from receipt
-    const extraction = await extractFromReceipt(buffer, file.name);
-
-    // Create expense record
-    const expense = await prisma.expense.create({
-      data: {
-        userId: user.id,
-        merchant: extraction.merchant,
-        description: extraction.description,
-        amount: extraction.amount,
-        currency: extraction.currency,
-        taxAmount: extraction.taxAmount,
-        transactionDate: extraction.transactionDate,
-        category: extraction.category,
-        paymentMethod: extraction.paymentMethod,
-        receiptPath: `/uploads/${filename}`,
-        receiptFilename: file.name,
-        extractionConfidence: extraction.confidence,
-        extractionData: JSON.stringify(extraction),
-        flaggedFields: JSON.stringify(extraction.flaggedFields),
-        status: "draft",
-      },
-    });
-
-    revalidatePath("/dashboard");
-    revalidatePath("/receipts");
-
-    return {
-      success: true,
-      expense,
-      extraction,
-    };
-  } catch (error: any) {
-    console.error("Upload error:", error);
-    return { success: false, error: error.message || "Upload failed" };
-  }
 }
 
 // ─── Expense CRUD ────────────────────────────────────────────
