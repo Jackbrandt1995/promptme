@@ -26,23 +26,35 @@ export async function POST(req: NextRequest) {
       {
         error:
           "Google Maps API key not configured. Add GOOGLE_MAPS_API_KEY to your .env file. " +
-          "Get a key at https://console.cloud.google.com/ (enable Distance Matrix API).",
+          "Get a key at https://console.cloud.google.com/ (enable Routes API).",
       },
       { status: 503 }
     );
   }
 
-  const url = new URL(
-    "https://maps.googleapis.com/maps/api/distancematrix/json"
-  );
-  url.searchParams.set("origins", origin.trim());
-  url.searchParams.set("destinations", destination.trim());
-  url.searchParams.set("units", "imperial");
-  url.searchParams.set("key", apiKey);
-
+  // Uses the Routes API (computeRouteMatrix) — the modern replacement for
+  // the deprecated Distance Matrix API. Enable "Routes API" in Google Cloud
+  // Console → APIs & Services → Library.
   let googleRes: Response;
   try {
-    googleRes = await fetch(url.toString());
+    googleRes = await fetch(
+      "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          // Only request the fields we need
+          "X-Goog-FieldMask": "originIndex,destinationIndex,distanceMeters,duration,status",
+        },
+        body: JSON.stringify({
+          origins: [{ waypoint: { address: origin.trim() } }],
+          destinations: [{ waypoint: { address: destination.trim() } }],
+          travelMode: "DRIVE",
+          routingPreference: "TRAFFIC_UNAWARE",
+        }),
+      }
+    );
   } catch {
     return NextResponse.json(
       { error: "Failed to reach Google Maps. Check your network connection." },
@@ -50,35 +62,55 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const data = await googleRes.json();
+  if (!googleRes.ok) {
+    let body: any = {};
+    try { body = await googleRes.json(); } catch { /* ignore */ }
 
-  if (data.status !== "OK") {
-    const statusMessages: Record<string, string> = {
-      REQUEST_DENIED:
-        "Google Maps request was denied. Make sure the Distance Matrix API is enabled for your key at console.cloud.google.com → APIs & Services → Enable APIs.",
-      OVER_DAILY_LIMIT:
-        "Google Maps daily quota exceeded. Check your billing and quota settings at console.cloud.google.com.",
-      OVER_QUERY_LIMIT: "Google Maps query limit exceeded. Please try again later.",
-      INVALID_REQUEST: "Invalid request sent to Google Maps. Check the addresses and try again.",
-    };
-    const message = statusMessages[data.status] ?? `Google Maps error: ${data.status}`;
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
+    const detail: string = body?.error?.message ?? body?.error?.status ?? String(googleRes.status);
 
-  const element = data.rows?.[0]?.elements?.[0];
-  if (!element || element.status !== "OK") {
+    // 403 = API not enabled or key restricted
+    if (googleRes.status === 403) {
+      return NextResponse.json(
+        {
+          error:
+            "Google Maps request denied (403). In Google Cloud Console, go to " +
+            "APIs & Services → Library, search for 'Routes API', and click Enable. " +
+            "Also make sure billing is active on your project.",
+        },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
-      {
-        error:
-          "Could not calculate distance between those addresses. Please check the addresses and try again.",
-      },
+      { error: `Google Maps error: ${detail}` },
       { status: 400 }
     );
   }
 
-  const distanceMeters: number = element.distance.value;
+  const data = await googleRes.json();
+
+  // computeRouteMatrix returns an array; grab the first element
+  const element = Array.isArray(data) ? data[0] : null;
+  if (!element || element.status !== "OK") {
+    const elementStatus: string = element?.status ?? "NO_ROUTE";
+    if (elementStatus === "NOT_FOUND") {
+      return NextResponse.json(
+        { error: "One or both addresses could not be found. Please use full street addresses including city and state." },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json(
+      { error: "Could not calculate distance between those addresses. Please check the addresses and try again." },
+      { status: 400 }
+    );
+  }
+
+  const distanceMeters: number = element.distanceMeters;
   const distanceMiles = Math.round((distanceMeters / METERS_PER_MILE) * 10) / 10;
   const amount = Math.round(distanceMiles * RATE_PER_MILE * 100) / 100;
+
+  // duration comes back as e.g. "1234s" — convert to "X min" / "X hr Y min"
+  const durationText = formatDuration(element.duration ?? "");
 
   return NextResponse.json({
     distanceMiles,
@@ -86,6 +118,15 @@ export async function POST(req: NextRequest) {
     ratePerMile: RATE_PER_MILE,
     origin: origin.trim(),
     destination: destination.trim(),
-    durationText: element.duration?.text ?? "",
+    durationText,
   });
+}
+
+function formatDuration(raw: string): string {
+  const seconds = parseInt(raw.replace("s", ""), 10);
+  if (isNaN(seconds) || seconds <= 0) return "";
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.round((seconds % 3600) / 60);
+  if (hrs > 0) return `${hrs} hr ${mins} min`;
+  return `${mins} min`;
 }
