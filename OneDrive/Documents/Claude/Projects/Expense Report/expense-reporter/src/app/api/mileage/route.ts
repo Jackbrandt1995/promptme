@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
-const RATE_PER_MILE = 0.75;
+const RATE_PER_MILE = 0.725;
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);

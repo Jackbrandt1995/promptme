@@ -425,3 +425,28 @@ export async function getUserExpenses() {
     orderBy: { createdAt: "desc" },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Home address (used in mileage quick-routes)
+// ---------------------------------------------------------------------------
+
+export async function getHomeAddress(): Promise<string> {
+  const user = await requireUser();
+  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+  return dbUser?.homeAddress ?? "";
+}
+
+export async function saveHomeAddress(
+  address: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user = await requireUser();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { homeAddress: address.trim() },
+    });
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message ?? "Failed to save address." };
+  }
+}
