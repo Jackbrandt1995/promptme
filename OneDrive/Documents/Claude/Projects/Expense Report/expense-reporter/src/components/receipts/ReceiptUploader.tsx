@@ -16,9 +16,10 @@ interface UploadResult {
 interface ReceiptUploaderProps {
   onUploadComplete?: (result: UploadResult) => void;
   compact?: boolean;
+  reportId?: string; // if provided, auto-attaches uploaded expense to this report
 }
 
-export function ReceiptUploader({ onUploadComplete, compact }: ReceiptUploaderProps) {
+export function ReceiptUploader({ onUploadComplete, compact, reportId }: ReceiptUploaderProps) {
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
@@ -38,6 +39,7 @@ export function ReceiptUploader({ onUploadComplete, compact }: ReceiptUploaderPr
 
           const formData = new FormData();
           formData.append("file", file);
+          if (reportId) formData.append("reportId", reportId);
 
           const res = await fetch("/api/upload", { method: "POST", body: formData });
           const result = await res.json();

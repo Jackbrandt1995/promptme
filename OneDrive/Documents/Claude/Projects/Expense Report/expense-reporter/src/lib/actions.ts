@@ -450,3 +450,112 @@ export async function saveHomeAddress(
     return { success: false, error: err.message ?? "Failed to save address." };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Admin helpers
+// ---------------------------------------------------------------------------
+
+async function requireAdmin() {
+  const user = await requireUser();
+  if ((user as any).role !== "admin") throw new Error("Forbidden");
+  return user;
+}
+
+// Admin reviews an entire report: approve, reject, or request revisions
+export async function adminReviewReport(
+  reportId: string,
+  action: "approved" | "rejected" | "revision_requested",
+  notes: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAdmin();
+
+    await prisma.expenseReport.update({
+      where: { id: reportId },
+      data: { status: action, adminNotes: notes.trim() },
+    });
+
+    revalidatePath("/admin");
+    revalidatePath(`/admin/reports/${reportId}`);
+    revalidatePath(`/reports/${reportId}`);
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message ?? "Review failed." };
+  }
+}
+
+// Admin reviews a single expense line item
+export async function adminReviewLineItem(
+  expenseId: string,
+  status: "accepted" | "declined" | "needs_revision",
+  notes: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAdmin();
+
+    await prisma.expense.update({
+      where: { id: expenseId },
+      data: { lineItemStatus: status, adminLineItemNotes: notes.trim() },
+    });
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message ?? "Line item review failed." };
+  }
+}
+
+// Admin marks a report as finalized — files it into the employee's Approved Reports
+export async function finalizeReport(
+  reportId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAdmin();
+
+    await prisma.expenseReport.update({
+      where: { id: reportId },
+      data: { status: "finalized" },
+    });
+
+    revalidatePath("/admin");
+    revalidatePath(`/admin/reports/${reportId}`);
+    revalidatePath(`/reports/${reportId}`);
+    revalidatePath("/dashboard");
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message ?? "Finalize failed." };
+  }
+}
+
+// Employee resubmits a report that was returned for revisions
+export async function resubmitReport(
+  reportId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user = await requireUser();
+
+    const report = await prisma.expenseReport.findFirst({
+      where: { id: reportId, userId: user.id, status: "revision_requested" },
+    });
+    if (!report) return { success: false, error: "Report not found or cannot be resubmitted." };
+
+    await prisma.expenseReport.update({
+      where: { id: reportId },
+      data: { status: "submitted", adminNotes: "", submittedAt: new Date().toISOString() },
+    });
+
+    // Clear line-item flags so admin reviews fresh
+    await prisma.expense.updateMany({
+      where: { reportId },
+      data: { lineItemStatus: "", adminLineItemNotes: "" },
+    });
+
+    revalidatePath(`/reports/${reportId}`);
+    revalidatePath("/reports");
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message ?? "Resubmit failed." };
+  }
+}

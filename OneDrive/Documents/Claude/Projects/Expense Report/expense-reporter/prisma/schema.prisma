@@ -49,6 +49,10 @@ model Expense {
   // Status: draft, reviewed, submitted, approved, rejected
   status          String   @default("draft")
 
+  // Admin line-item review
+  lineItemStatus      String @default("") // "" | "accepted" | "declined" | "needs_revision"
+  adminLineItemNotes  String @default("")
+
   // Report link (nullable)
   reportId        String?
   report          ExpenseReport? @relation(fields: [reportId], references: [id])
@@ -71,10 +75,11 @@ model ExpenseReport {
   notes           String   @default("")
   totalAmount     Float    @default(0)
 
-  // Status: draft, submitted, approved, rejected
+  // Status: draft | submitted | revision_requested | approved | rejected | finalized
   status          String   @default("draft")
   submittedAt     String?  // ISO timestamp
   adminEmail      String   @default("")
+  adminNotes      String   @default("") // admin feedback returned to employee
 
   expenses        Expense[]
 

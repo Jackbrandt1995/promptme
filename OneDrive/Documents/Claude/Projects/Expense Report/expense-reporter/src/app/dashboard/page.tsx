@@ -10,34 +10,24 @@ export default async function DashboardPage() {
 
   const userId = session.user.id;
 
-  const [recentReports, draftExpenses, submittedCount] = await Promise.all([
+  const [allReports] = await Promise.all([
     prisma.expenseReport.findMany({
       where: { userId },
       include: { expenses: true },
       orderBy: { updatedAt: "desc" },
-      take: 5,
-    }),
-    prisma.expense.findMany({
-      where: { userId, reportId: null },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    }),
-    prisma.expenseReport.count({
-      where: { userId, status: "submitted" },
     }),
   ]);
 
-  const totalPending = draftExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const draftReports = recentReports.filter((r) => r.status === "draft");
+  const activeReports  = allReports.filter((r) => r.status !== "finalized");
+  const approvedReports = allReports.filter((r) => r.status === "finalized");
+  const submittedCount  = allReports.filter((r) => r.status === "submitted").length;
 
   return (
     <DashboardClient
       user={session.user}
-      recentReports={JSON.parse(JSON.stringify(recentReports))}
-      draftExpenses={JSON.parse(JSON.stringify(draftExpenses))}
-      draftReportCount={draftReports.length}
+      activeReports={JSON.parse(JSON.stringify(activeReports))}
+      approvedReports={JSON.parse(JSON.stringify(approvedReports))}
       submittedCount={submittedCount}
-      totalPending={totalPending}
     />
   );
 }

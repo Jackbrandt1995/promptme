@@ -63,6 +63,22 @@ export async function POST(req: NextRequest) {
     const filepath = path.join(uploadDir, filename);
     await writeFile(filepath, buffer);
 
+    // Optional: attach directly to a report
+    const reportId = formData.get("reportId") as string | null;
+
+    // Validate reportId belongs to this user if provided
+    if (reportId) {
+      const report = await prisma.expenseReport.findFirst({
+        where: { id: reportId, userId: session.user.id },
+      });
+      if (!report) {
+        return NextResponse.json(
+          { success: false, error: "Report not found." },
+          { status: 400 }
+        );
+      }
+    }
+
     // OCR / text extraction — runs correctly in a Route Handler
     const extraction = await extractFromReceipt(buffer, file.name);
 
@@ -83,8 +99,21 @@ export async function POST(req: NextRequest) {
         extractionData: JSON.stringify(extraction),
         flaggedFields: JSON.stringify(extraction.flaggedFields),
         status: "draft",
+        ...(reportId ? { reportId } : {}),
       },
     });
+
+    // If attached to a report, recalculate total
+    if (reportId) {
+      const { _sum } = await prisma.expense.aggregate({
+        where: { reportId },
+        _sum: { amount: true },
+      });
+      await prisma.expenseReport.update({
+        where: { id: reportId },
+        data: { totalAmount: Math.round((_sum.amount ?? 0) * 100) / 100 },
+      });
+    }
 
     return NextResponse.json({ success: true, expense, extraction });
   } catch (error: any) {

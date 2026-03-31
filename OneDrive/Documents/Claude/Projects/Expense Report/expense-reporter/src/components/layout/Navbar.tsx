@@ -11,10 +11,13 @@ export function Navbar() {
 
   if (!session) return null;
 
+  const isAdmin = (session.user as any).role === "admin";
+
   const links = [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/receipts", label: "Receipts" },
     { href: "/reports", label: "Reports" },
+    ...(isAdmin ? [{ href: "/admin", label: "⚙ Admin" }] : []),
   ];
 
   return (
